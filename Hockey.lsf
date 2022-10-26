@@ -1,0 +1,156 @@
+MODULE HockeyStats;
+
+
+
+CLASS Team 'Команда';
+name 'Название команды' = DATA STRING[30] (Team) IN base;
+// IN base - с группами свойств пока не все ясно
+
+
+CLASS Game 'Игра';
+
+date 'Дата' = DATA DATE (Game);
+hostTeam = DATA Team (Game);
+guestTeam = DATA Team (Game);
+// задаем первичные свойства классу Game со ссылкой на класс Team?? 
+
+hostTeamName 'Хозяева' (Game game) = name(hostTeam(game));
+guestTeamName 'Гости' (Game game) = name(guestTeam(game));  
+// что означает второй элемент "game"?
+// откуда он взялся и почему записан через пробел?
+
+
+// здесь у нас для сравнения используется оператор "=" , можно ли форссировать использование "==" для сравнения, 
+// или же есть какое-либо ограничения по которым мы должны иногда использовать "="
+CONSTRAINT hostTeam(Game team) = guestTeam(team)
+    CHECKED BY hostTeam, guestTeam 
+    MESSAGE 'Хозяйская и гостевая команды должны быть разными';
+
+hostGoals 'Х голы' = DATA INTEGER (Game);
+guestGoals 'Г голы' = DATA INTEGER (Game);
+//добавляем целочисленные свойства классу Game
+
+
+//снова эта 2х элементная конструкция (Game game), причем только в левой части 
+CONSTRAINT hostGoals(Game game) = guestGoals(game)
+    MESSAGE 'Игра не может закончиться вничью';
+
+//сравниваем кол-во голов, затем присваиваем название команды победителя и проигравшего
+winner(Game game) = IF hostGoals(game) > guestGoals(game)
+                    THEN hostTeam(game)
+                    ELSE guestTeam(game);
+looser(Game game) = IF hostGoals(game) > guestGoals(game)
+                    THEN guestTeam(game)
+                    ELSE hostTeam(game);
+
+//создается класс и его предопределенные значения
+CLASS GameResult 'Р/И' {
+    win 'П',
+    winOT 'ПО',
+    winSO 'ПБ'
+}
+
+resultName 'Имя' (GameResult game) = staticCaption(game) 
+    IF game IS GameResult IN base;
+// IS - проверяет соответствие формата данных?
+
+
+// задаем первичные свойства классу Game со ссылкой на класс GameResult?
+userResult = DATA GameResult(Game);
+
+// создается свойство result которому присваивается первое не NULL свойство
+// по результатам оператора OVERRIDE
+result (Game game) = OVERRIDE userResult(game), (GameResult.win 
+    IF ((hostGoals(game) (-) guestGoals(game)) > 1 
+    OR (guestGoals(game) (-) hostGoals(game)) > 1));
+
+// создается свойство resultName -> присваиваем значение свойства result
+resultName 'Р/И' (Game game) = resultName(result(game));
+
+
+// задается ограничение с условием если разница в голах более 2
+CONSTRAINT ((hostGoals(Game game) (-) guestGoals(game)) > 1
+    OR (hostGoals(game) (-) guestGoals(game)) < -1)
+    AND userResult(game)
+    MESSAGE 'Результат игры определен автоматически';
+
+// задается ограничение с условием если разница в голах менее 2
+CONSTRAINT ((hostGoals(Game game) (-) guestGoals(game)) < 2
+    AND (hostGoals(game) (-) guestGoals(game)) > -2)
+    AND NOT userResult(game)
+    MESSAGE 'Укажите результат игры';
+
+
+
+// создаются свойства, котором присваеивается целочисленные значения суммы игр
+// нигде не указан класс Team, не прослеживаю связь с конкретной командой?
+hostGamesPlayed = GROUP SUM 1 BY hostTeam(Game game);
+guestGamesPlayed = GROUP SUM 1 BY guestTeam(Game game);
+
+// выше мы посчитали суммы всех игр, а теперь задаем свойство gamesPlayed для
+// каждой отдельной команды?
+gamesPlayed 'И' (Team team) = hostGamesPlayed(team) (+) guestGamesPlayed(team);
+
+
+// создается свойство которое будет возвращать тип выигранной игры
+// имеет 2 входных параметра - Team team, и GameResult type
+gamesWonBy(Team team, GameResult type) = 
+    OVERRIDE [GROUP SUM 1 BY winner(Game game), result(game)](team, type), 0;
+
+// создаются свойства, которым присваивается кол-во отобранных по условию игр
+gamesWon 'В' (Team team) = gamesWonBy(team, GameResult.win);
+gamesWonOT 'ВО' (Team team) = gamesWonBy(team, GameResult.winOT);
+gamesWonSO 'ВБ' (Team team) = gamesWonBy(team, GameResult.winSO);
+
+// тоже самое для проигранных игр
+gamesLostBy(Team team, GameResult type) = OVERRIDE [GROUP SUM 1 BY looser(Game game), result(game)](team, type), 0;
+
+gamesLost 'П' (Team team) = gamesLostBy(team, GameResult.win);
+gamesLostOT 'ПО' (Team team) = gamesLostBy(team, GameResult.winOT);
+gamesLostSO 'ПБ' (Team team) = gamesLostBy(team, GameResult.winSO);
+
+
+// создается свойство points в который суммирются все очки в соответствии с правилами
+points 'Очки' (Team team) = gamesWon(team) * 3 
+    + (gamesWonSO(team) + gamesWonOT(team)) * 2 + gamesLostOT(team) 
+    + gamesLostSO(team);
+
+
+// создается свойство, в который суммируется голы дома и в гостях
+hostGoalsScored = GROUP SUM hostGoals(Game game) BY hostTeam(game);
+guestGoalsScored = GROUP SUM guestGoals(Game game) BY guestTeam(game);
+// суммируются все голы
+goalsScored 'Кол-во забитых голов' (Team team) = 
+    OVERRIDE hostGoalsScored(team) (+) guestGoalsScored(team), 
+    0 IF team IS Team;
+
+//то же самое для пропущенных голов
+hostGoalsConceded = GROUP SUM guestGoals(Game game) BY hostTeam(game);
+guestGoalsConceded = GROUP SUM hostGoals(Game game) BY guestTeam(game);
+goalsConceded 'Кол-во пропущенных голов' (Team team) = OVERRIDE hostGoalsConceded(team) (+) guestGoalsConceded(team), 0 IF team IS Team;
+
+// создается свойство place класса Team, по факту дает каждой команде значение от 1
+// в зависимости от условий (как по нескольким условиям одновременно идет расчет, неясно)??
+place 'Место' (Team team) = PARTITION SUM 1 
+    ORDER DESC points(team), gamesWon(team), gamesWonOT(team), gamesWonSO(team),
+    (OVERRIDE goalsScored(team) (-) goalsConceded(team), 0), goalsScored(team);
+
+
+// создается форма, Турнирная таблица с окном Игры для которого задаются параметры игр
+FORM MainForm 'Турнирная таблица'
+    OBJECTS game = Game
+    PROPERTIES(game) date, hostTeamName, hostGoals, guestGoals, guestTeamName, resultName, NEW, DELETE
+;
+
+// создается доп. окно Команды с параметрами
+EXTEND FORM MainForm
+    OBJECTS team = Team
+    PROPERTIES(team) place, name, gamesPlayed, gamesWon, gamesWonOT, gamesWonSO,
+                     gamesLostSO, gamesLostOT, gamesLost, goalsScored, goalsConceded, points, NEW, DELETE
+    ORDERS place(team)
+;
+
+// форма добавляется в папку ROOT
+NAVIGATOR {
+    NEW MainForm FIRST;
+}
