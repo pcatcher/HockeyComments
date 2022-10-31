@@ -1,4 +1,4 @@
-26 окт. 2022 11:23:27,668 ERROR LogicsModule - lsfusion.gwt.client.base.exception.RemoteRetryException no such object in table at '26.10.2022, 11:23' from '127.0.0.1 - web': 
+27 окт. 2022 15:17:03,712 ERROR LogicsModule - lsfusion.gwt.client.base.exception.RemoteRetryException no such object in table at '27.10.2022, 15:17' from '127.0.0.1 - web': 
 null
 	at java.lang.Throwable.Throwable(Throwable.java:63)
 	at java.lang.Exception.Exception(Exception.java:25)
